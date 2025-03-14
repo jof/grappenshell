@@ -9,7 +9,7 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/yourusername/tsllm/internal/llm"
+	"github.com/jof/grappenshell/internal/llm"
 	"golang.org/x/crypto/ssh/terminal"
 )
 
@@ -21,27 +21,27 @@ type Config struct {
 
 // Session represents a shell-like session
 type Session struct {
-	channel     io.ReadWriter
-	config      *Config
-	term        *terminal.Terminal
-	ctx         context.Context
-	cancel      context.CancelFunc
+	channel      io.ReadWriter
+	config       *Config
+	term         *terminal.Terminal
+	ctx          context.Context
+	cancel       context.CancelFunc
 	conversation []string
-	mu          sync.Mutex
+	mu           sync.Mutex
 }
 
 // NewSession creates a new shell session
 func NewSession(channel io.ReadWriter, config *Config) *Session {
 	ctx, cancel := context.WithCancel(context.Background())
-	
+
 	term := terminal.NewTerminal(channel, "llm> ")
-	
+
 	return &Session{
-		channel:     channel,
-		config:      config,
-		term:        term,
-		ctx:         ctx,
-		cancel:      cancel,
+		channel:      channel,
+		config:       config,
+		term:         term,
+		ctx:          ctx,
+		cancel:       cancel,
 		conversation: []string{config.SystemPrompt},
 	}
 }

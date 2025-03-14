@@ -2,12 +2,13 @@ package ssh
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
 	"fmt"
-	"io"
 	"log"
 	"net"
 
-	"github.com/yourusername/tsllm/internal/shell"
+	"github.com/jof/grappenshell/internal/shell"
 	"golang.org/x/crypto/ssh"
 	"tailscale.com/tsnet"
 )
@@ -122,21 +123,21 @@ func (s *Server) handleSession(channel ssh.Channel, requests <-chan *ssh.Request
 		case "shell", "exec":
 			// Accept the request
 			req.Reply(true, nil)
-			
+
 			// Start the shell session
 			if err := session.Start(); err != nil {
 				log.Printf("Failed to start shell session: %v", err)
 				return
 			}
-			
+
 		case "pty-req":
 			// Accept the request
 			req.Reply(true, nil)
-			
+
 		case "window-change":
 			// Handle window resize
 			req.Reply(true, nil)
-			
+
 		default:
 			log.Printf("Unhandled request type: %s", req.Type)
 			req.Reply(false, nil)
@@ -147,9 +148,10 @@ func (s *Server) handleSession(channel ssh.Channel, requests <-chan *ssh.Request
 // generateHostKey generates a new SSH host key
 func generateHostKey() (ssh.Signer, error) {
 	// In a real application, you'd want to persist this key
-	key, err := ssh.GenerateKey(nil, 2048)
+	_, privKey, err := ed25519.GenerateKey(rand.Reader)
+	signer, err := ssh.NewSignerFromKey(privKey)
 	if err != nil {
 		return nil, err
 	}
-	return key, nil
+	return signer, nil
 }

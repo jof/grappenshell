@@ -8,14 +8,14 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/yourusername/tsllm/internal/llm"
-	"github.com/yourusername/tsllm/internal/shell"
-	"github.com/yourusername/tsllm/internal/ssh"
+	"github.com/jof/grappenshell/internal/llm"
+	"github.com/jof/grappenshell/internal/shell"
+	"github.com/jof/grappenshell/internal/ssh"
 )
 
 func main() {
 	// Parse command line flags
-	hostname := flag.String("hostname", "llm-ssh", "Tailscale hostname")
+	hostname := flag.String("hostname", "grappenshell", "Tailscale hostname")
 	systemPrompt := flag.String("system-prompt", "You are a helpful assistant in an SSH shell. Answer user queries concisely.", "System prompt for the LLM")
 	flag.Parse()
 
