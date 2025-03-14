@@ -39,7 +39,7 @@ func main() {
 	defer cancel()
 
 	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM, syscall.SIGSTOP)
 	
 	// Start the server in a goroutine
 	errChan := make(chan error, 1)

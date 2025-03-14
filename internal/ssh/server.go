@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -49,30 +50,35 @@ func NewServer(hostname string, shellConfig *shell.Config) (*Server, error) {
 // Start starts the SSH server
 func (s *Server) Start(ctx context.Context) error {
 	// Start Tailscale
-	ln, err := s.tsServer.Listen("tcp", ":22")
+	listener, err := s.tsServer.Listen("tcp", ":22")
 	if err != nil {
 		return fmt.Errorf("failed to listen on Tailscale: %v", err)
 	}
-	s.listener = ln
+	s.listener = listener
 
-	ipn, err := s.tsServer.LocalClient()
+	localClient, err := s.tsServer.LocalClient()
 	if err != nil {
 		return fmt.Errorf("failed to get Tailscale client: %v", err)
 	}
-	st, err := ipn.Status(ctx)
+	localClientStatus, err := localClient.Status(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get Tailscale status: %v", err)
 	}
 
-	log.Printf("SSH server running on Tailscale node %s", st.Self.DNSName)
+	log.Printf("SSH server running on Tailscale node %s", localClientStatus.Self.DNSName)
 
 	for {
-		conn, err := ln.Accept()
-		if err != nil {
-			log.Printf("Failed to accept connection: %v", err)
-			continue
+		select {
+		case <-ctx.Done():
+			return nil
+		default:
+			conn, err := listener.Accept()
+			if err != nil {
+				log.Printf("Failed to accept connection: %v", err)
+				continue
+			}
+			go s.handleConnection(conn)
 		}
-		go s.handleConnection(conn)
 	}
 }
 
