@@ -18,6 +18,7 @@ type Server struct {
 	tsServer    *tsnet.Server
 	sshConfig   *ssh.ServerConfig
 	shellConfig *shell.Config
+	listener    net.Listener
 }
 
 // NewServer creates a new SSH server
@@ -52,7 +53,7 @@ func (s *Server) Start(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to listen on Tailscale: %v", err)
 	}
-	defer ln.Close()
+	s.listener = ln
 
 	ipn, err := s.tsServer.LocalClient()
 	if err != nil {
@@ -154,4 +155,15 @@ func generateHostKey() (ssh.Signer, error) {
 		return nil, err
 	}
 	return signer, nil
+}
+
+// Close shuts down the SSH server and cleans up resources
+func (s *Server) Close() error {
+	// Close the listener if it exists
+	if s.listener != nil {
+		s.listener.Close()
+	}
+	
+	// Close the Tailscale server
+	return s.tsServer.Close()
 }

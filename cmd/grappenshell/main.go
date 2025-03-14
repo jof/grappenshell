@@ -40,12 +40,23 @@ func main() {
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	
+	// Start the server in a goroutine
+	errChan := make(chan error, 1)
 	go func() {
-		<-sigChan
-		log.Println("Shutting down...")
-		cancel()
+		errChan <- server.Start(ctx)
 	}()
 
-	// Start the server
-	log.Fatal(server.Start(ctx))
+	// Wait for either an error or a signal
+	select {
+	case err := <-errChan:
+		log.Fatalf("Server error: %v", err)
+	case sig := <-sigChan:
+		log.Printf("Received signal %v, shutting down...", sig)
+		cancel()
+		if err := server.Close(); err != nil {
+			log.Printf("Error closing server: %v", err)
+		}
+		log.Println("Server shutdown complete")
+	}
 }
