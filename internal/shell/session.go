@@ -100,6 +100,9 @@ func (s *Session) Start() error {
 			return nil
 		}
 
+		// Record any side effects for future consistency
+		s.state.RecordIfModifying(trimmed)
+
 		// Send to LLM with current state context
 		response, err := s.sendToLLM(trimmed)
 		if err != nil {

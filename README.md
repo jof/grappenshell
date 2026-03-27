@@ -23,18 +23,30 @@ internal/
 
 ## Configuration
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `-hostname` | `grappenshell` | Tailscale hostname for the node |
-| `-system-prompt` | *(built-in)* | System prompt controlling the LLM's shell persona |
+Grappenshell uses a JSONC config file (supports comments and trailing commas):
 
-The LLM API endpoint is at `http://ai.example-tailnet.ts.net/v1` (accessible over Tailscale).
+```bash
+cp config.example.jsonc config.jsonc
+# Edit config.jsonc with your settings
+./grappenshell -config config.jsonc
+```
+
+Key settings:
+- `hostname` — Tailscale node name
+- `sim_hostname` / `default_user` / `default_home` — simulated shell identity
+- `llm_url` / `llm_model` — OpenAI-compatible API endpoint (e.g. via [Tailscale Funnel](https://tailscale.com/kb/1223/funnel) or an internal tailnet service)
+- `system_prompt_file` — path to the system prompt (the secret sauce)
+- `ssh_port` — SSH listen port on the tsnet node
+
+The config file and system prompt are gitignored since they contain deployment-specific details.
 
 ## Building & Running
 
 ```bash
 go build -o grappenshell ./cmd/grappenshell
-./grappenshell -hostname grappenshell
+cp config.example.jsonc config.jsonc
+# Edit config.jsonc with your LLM endpoint, hostname, etc.
+./grappenshell -config config.jsonc
 ```
 
 Then from any machine on the tailnet:
@@ -43,12 +55,18 @@ Then from any machine on the tailnet:
 ssh grappenshell
 ```
 
+## Features
+
+- **Dynamic shell state** — tracks CWD, user, environment variables, sudo/su transitions
+- **Side-effect memory** — remembers file creation, deletion, etc. within a session for consistency
+- **SSH username passthrough** — the simulated shell uses whatever username the SSH client provides
+- **Configurable persona** — system prompt defines the entire world (hardware, processes, files, whimsy)
+- **External system prompt file** — edit the prompt without rebuilding
+
 ## Status
 
-Early skeleton — the SSH server and session plumbing work, but the LLM client is currently a mock. Next steps:
+Functional and entertaining. Future ideas:
 
-- Wire up the real OpenAI-compatible API client (`http://ai.example-tailnet.ts.net/v1`)
-- Craft a system prompt that convincingly emulates a weird-but-plausible Linux system
 - Handle PTY sizing, ANSI color output, and terminal quirks
-- Add stateful context (fake filesystem tree, hostname, uptime, etc.) to improve consistency
-- Possibly template common commands (like `uname`, `whoami`) for speed and consistency
+- Template common commands (`uname`, `whoami`) for speed and consistency
+- Streaming LLM responses for more realistic feel
