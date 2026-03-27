@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
+	"time"
 )
 
 // Message represents a chat message in the OpenAI API format
@@ -17,8 +19,9 @@ type Message struct {
 
 // ChatRequest represents an OpenAI-compatible chat completion request
 type ChatRequest struct {
-	Model    string    `json:"model"`
-	Messages []Message `json:"messages"`
+	Model     string    `json:"model"`
+	Messages  []Message `json:"messages"`
+	MaxTokens int       `json:"max_tokens,omitempty"`
 }
 
 // ChatResponse represents an OpenAI-compatible chat completion response
@@ -65,8 +68,9 @@ func (c *OpenAIClient) Complete(ctx context.Context, conversation []string) (str
 	}
 
 	reqBody := ChatRequest{
-		Model:    c.model,
-		Messages: messages,
+		Model:     c.model,
+		Messages:  messages,
+		MaxTokens: 2048,
 	}
 
 	bodyBytes, err := json.Marshal(reqBody)
@@ -75,12 +79,18 @@ func (c *OpenAIClient) Complete(ctx context.Context, conversation []string) (str
 	}
 
 	url := c.baseURL + "/chat/completions"
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(bodyBytes))
+
+	// Use a timeout so we don't hang forever
+	reqCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, url, bytes.NewReader(bodyBytes))
 	if err != nil {
 		return "", fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 
+	log.Printf("LLM request: model=%s messages=%d", c.model, len(messages))
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("LLM API request failed: %w", err)
