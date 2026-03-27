@@ -8,28 +8,42 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/jof/grappenshell/internal/config"
 	"github.com/jof/grappenshell/internal/llm"
 	"github.com/jof/grappenshell/internal/shell"
 	"github.com/jof/grappenshell/internal/ssh"
+	"tailscale.com/tsnet"
 )
 
 func main() {
-	// Parse command line flags
-	hostname := flag.String("hostname", "grappenshell", "Tailscale hostname")
-	systemPrompt := flag.String("system-prompt", "You are a helpful assistant in an SSH shell. Answer user queries concisely.", "System prompt for the LLM")
+	configPath := flag.String("config", "config.jsonc", "Path to config file (JSON or JSONC/JWCC)")
 	flag.Parse()
 
-	// Create LLM client
-	llmClient := llm.NewMockClient()
+	cfg, err := config.Load(*configPath)
+	if err != nil {
+		log.Fatalf("Failed to load config: %v", err)
+	}
+
+	// Create shared Tailscale tsnet server
+	tsServer := &tsnet.Server{
+		Hostname: cfg.Hostname,
+	}
+
+	// Get a Tailscale-aware HTTP client for the LLM API
+	httpClient := tsServer.HTTPClient()
+
+	// Create LLM client that talks over Tailscale
+	llmClient := llm.NewOpenAIClient(httpClient, cfg.LLMURL, cfg.LLMModel)
 
 	// Create shell config
 	shellConfig := &shell.Config{
-		SystemPrompt: *systemPrompt,
+		Prompt:       cfg.Prompt,
+		SystemPrompt: cfg.SystemPrompt,
 		LLMClient:    llmClient,
 	}
 
-	// Create SSH server
-	server, err := ssh.NewServer(*hostname, shellConfig)
+	// Create SSH server using the shared tsnet server
+	server, err := ssh.NewServer(tsServer, shellConfig, cfg.SSHPort)
 	if err != nil {
 		log.Fatalf("Failed to create SSH server: %v", err)
 	}
@@ -39,8 +53,8 @@ func main() {
 	defer cancel()
 
 	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM, syscall.SIGSTOP)
-	
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+
 	// Start the server in a goroutine
 	errChan := make(chan error, 1)
 	go func() {

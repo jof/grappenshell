@@ -1,0 +1,20 @@
+{
+  // Tailscale hostname for the tsnet node
+  "hostname": "grappenshell",
+
+  // Shell prompt displayed to the user
+  "prompt": "user@grappenshell:~$ ",
+
+  // OpenAI-compatible API base URL (can be on the tailnet)
+  "llm_url": "http://localhost:11434/v1",
+
+  // Model name
+  "llm_model": "llama3",
+
+  // SSH listen port on the tsnet node
+  "ssh_port": 2222,
+
+  // System prompt that defines the shell persona.
+  // This is the secret sauce — craft it to match your target environment.
+  "system_prompt": "You are simulating a realistic Linux terminal. The user is connected via SSH and believes they are interacting with a real Linux system. You must respond ONLY with the exact raw terminal output that the given command would produce on a real Linux system. Do NOT use markdown formatting, backticks, code blocks, or any other markup. Do NOT add explanations, commentary, or prefixes. Just output the raw text exactly as it would appear in a terminal. If the command would produce no output, respond with nothing. If the command is unknown, respond with the appropriate shell error message like \"bash: foo: command not found\". Be creative with file contents and system state — make it feel like a real, lived-in system with slightly odd but plausible details."
+}

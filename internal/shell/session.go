@@ -4,10 +4,8 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 	"sync"
-	"syscall"
 
 	"github.com/jof/grappenshell/internal/llm"
 	"golang.org/x/crypto/ssh/terminal"
@@ -15,6 +13,7 @@ import (
 
 // Config holds configuration for the shell session
 type Config struct {
+	Prompt       string
 	SystemPrompt string
 	LLMClient    llm.Client
 }
@@ -34,7 +33,7 @@ type Session struct {
 func NewSession(channel io.ReadWriter, config *Config) *Session {
 	ctx, cancel := context.WithCancel(context.Background())
 
-	term := terminal.NewTerminal(channel, "llm> ")
+	term := terminal.NewTerminal(channel, config.Prompt)
 
 	return &Session{
 		channel:      channel,
@@ -48,18 +47,6 @@ func NewSession(channel io.ReadWriter, config *Config) *Session {
 
 // Start starts the shell session
 func (s *Session) Start() error {
-	// Print welcome message
-	fmt.Fprintln(s.term, "Welcome to the LLM Shell. Type 'exit' to quit.")
-	fmt.Fprintln(s.term, "Use Ctrl+C to interrupt the current response.")
-	fmt.Fprintln(s.term, "")
-
-	// Set up terminal raw mode for handling control characters
-	oldState, err := terminal.MakeRaw(int(os.Stdin.Fd()))
-	if err != nil {
-		return fmt.Errorf("failed to set terminal to raw mode: %v", err)
-	}
-	defer terminal.Restore(int(os.Stdin.Fd()), oldState)
-
 	// Main loop
 	for {
 		line, err := s.term.ReadLine()
@@ -88,8 +75,8 @@ func (s *Session) Start() error {
 			continue
 		}
 
-		// Print response
-		fmt.Fprintln(s.term, response)
+		// Strip any markdown artifacts and print response
+		fmt.Fprintln(s.term, stripMarkdown(response))
 	}
 }
 
@@ -114,14 +101,22 @@ func (s *Session) sendToLLM(tokens []string) (string, error) {
 	return response, nil
 }
 
-// HandleSignal handles terminal signals like Ctrl+C and Ctrl+Z
-func (s *Session) HandleSignal(signal syscall.Signal) {
-	switch signal {
-	case syscall.SIGINT: // Ctrl+C
-		s.cancel()
-		s.ctx, s.cancel = context.WithCancel(context.Background())
-		fmt.Fprintln(s.term, "\n^C")
-	case syscall.SIGTSTP: // Ctrl+Z
-		fmt.Fprintln(s.term, "\n^Z (Job control not supported)")
+// stripMarkdown removes common markdown formatting artifacts from LLM output
+func stripMarkdown(s string) string {
+	lines := strings.Split(s, "\n")
+	var result []string
+	for _, line := range lines {
+		// Remove code block fences (```bash, ```, etc.)
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "```") {
+			continue
+		}
+		// Remove inline backticks wrapping entire lines
+		if len(trimmed) >= 2 && trimmed[0] == '`' && trimmed[len(trimmed)-1] == '`' {
+			line = strings.TrimSpace(line)
+			line = line[1 : len(line)-1]
+		}
+		result = append(result, line)
 	}
+	return strings.Join(result, "\n")
 }
