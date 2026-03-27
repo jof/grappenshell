@@ -37,8 +37,10 @@ func main() {
 
 	// Create shell config
 	shellConfig := &shell.Config{
-		Prompt:       cfg.Prompt,
 		SystemPrompt: cfg.SystemPrompt,
+		Hostname:     cfg.SimHostname,
+		DefaultUser:  cfg.DefaultUser,
+		DefaultHome:  cfg.DefaultHome,
 		LLMClient:    llmClient,
 	}
 

@@ -124,17 +124,17 @@ func (s *Server) handleConnection(conn net.Conn) {
 			continue
 		}
 
-		// Handle the session
-		go s.handleSession(channel, requests)
+		// Handle the session with the SSH username
+		go s.handleSession(channel, requests, sshConn.User())
 	}
 }
 
 // handleSession handles an SSH session channel
-func (s *Server) handleSession(channel ssh.Channel, requests <-chan *ssh.Request) {
+func (s *Server) handleSession(channel ssh.Channel, requests <-chan *ssh.Request, sshUser string) {
 	defer channel.Close()
 
-	// Create a new shell session
-	session := shell.NewSession(channel, s.shellConfig)
+	// Create a new shell session using the SSH username
+	session := shell.NewSession(channel, s.shellConfig, sshUser)
 
 	// Handle requests
 	for req := range requests {
