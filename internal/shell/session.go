@@ -110,8 +110,8 @@ func (s *Session) Start() error {
 			continue
 		}
 
-		// Strip any markdown artifacts and print response
-		cleaned := stripMarkdown(response)
+		// Strip any markdown artifacts and unescape ANSI codes, then print
+		cleaned := unescapeANSI(stripMarkdown(response))
 		if cleaned != "" {
 			fmt.Fprintln(s.term, cleaned)
 		}
@@ -159,6 +159,18 @@ func (s *Session) sendToLLM(command string) (string, error) {
 	s.conversation = append(s.conversation, "Assistant: "+response)
 
 	return response, nil
+}
+
+// unescapeANSI converts literal escape sequences in LLM output to real ANSI
+// escape bytes so terminals render colors and formatting correctly.
+// Handles \033[, \x1b[, and \e[ notations.
+func unescapeANSI(s string) string {
+	s = strings.ReplaceAll(s, `\033[`, "\033[")
+	s = strings.ReplaceAll(s, `\x1b[`, "\033[")
+	s = strings.ReplaceAll(s, `\e[`, "\033[")
+	s = strings.ReplaceAll(s, `\033]`, "\033]") // OSC sequences
+	s = strings.ReplaceAll(s, `\x1b]`, "\033]")
+	return s
 }
 
 // stripMarkdown removes common markdown formatting artifacts from LLM output
