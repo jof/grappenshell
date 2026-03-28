@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math/rand"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/jof/grappenshell/internal/llm"
 	"golang.org/x/crypto/ssh/terminal"
@@ -73,14 +75,8 @@ func NewSession(channel io.ReadWriter, config *Config, sshUser string) *Session 
 func (s *Session) Start() error {
 	// If a MOTD command is configured, send it to the LLM on first connect
 	if s.config.MotdCommand != "" {
-		response, err := s.sendToLLM(s.config.MotdCommand)
-		if err != nil {
+		if err := s.streamToLLM(s.config.MotdCommand); err != nil {
 			fmt.Fprintf(s.term, "Error: %v\n", err)
-		} else {
-			cleaned := unescapeANSI(stripMarkdown(response))
-			if cleaned != "" {
-				s.writeRaw(cleaned)
-			}
 		}
 	}
 
@@ -124,17 +120,10 @@ func (s *Session) Start() error {
 		// Record any side effects for future consistency
 		s.state.RecordIfModifying(trimmed)
 
-		// Send to LLM with current state context
-		response, err := s.sendToLLM(trimmed)
-		if err != nil {
+		// Send to LLM with streaming output
+		if err := s.streamToLLM(trimmed); err != nil {
 			fmt.Fprintf(s.term, "Error: %v\n", err)
 			continue
-		}
-
-		// Strip any markdown artifacts and unescape ANSI codes, then print
-		cleaned := unescapeANSI(stripMarkdown(response))
-		if cleaned != "" {
-			s.writeRaw(cleaned)
 		}
 
 		// Update prompt in case the LLM response implies state we should track
@@ -161,7 +150,59 @@ func (s *Session) buildSystemPrompt() string {
 	return b.String()
 }
 
-// sendToLLM sends the command to the LLM and returns the response
+// streamToLLM sends a command to the LLM and streams tokens to the terminal
+// as they arrive, then records the full response in conversation history.
+func (s *Session) streamToLLM(command string) error {
+	s.mu.Lock()
+
+	systemPrompt := s.buildSystemPrompt()
+	if len(s.conversation) == 0 {
+		s.conversation = append(s.conversation, systemPrompt)
+	} else {
+		s.conversation[0] = systemPrompt
+	}
+	s.conversation = append(s.conversation, "User: "+command)
+	conv := make([]string, len(s.conversation))
+	copy(conv, s.conversation)
+	s.mu.Unlock()
+
+	// Buffer tokens until newline so unescapeANSI sees complete escape
+	// sequences that may be split across token boundaries.
+	var lineBuf strings.Builder
+	response, err := s.config.LLMClient.CompleteStream(s.ctx, conv, func(token string) {
+		lineBuf.WriteString(token)
+		for {
+			text := lineBuf.String()
+			idx := strings.Index(text, "\n")
+			if idx == -1 {
+				break
+			}
+			line := unescapeANSI(text[:idx])
+			lineBuf.Reset()
+			lineBuf.WriteString(text[idx+1:])
+			s.channel.Write([]byte(line))
+			s.channel.Write([]byte("\r\n"))
+			// Small random delay per line for a more natural feel
+			time.Sleep(time.Duration(10+rand.Intn(30)) * time.Millisecond)
+		}
+	})
+	// Flush any remaining buffered text
+	if remaining := lineBuf.String(); remaining != "" {
+		s.channel.Write([]byte(unescapeANSI(remaining)))
+	}
+	s.channel.Write([]byte("\r\n"))
+
+	if err != nil {
+		return err
+	}
+
+	s.mu.Lock()
+	s.conversation = append(s.conversation, "Assistant: "+response)
+	s.mu.Unlock()
+	return nil
+}
+
+// sendToLLM sends the command to the LLM and returns the response (non-streaming)
 func (s *Session) sendToLLM(command string) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -193,13 +234,17 @@ func (s *Session) sendToLLM(command string) (string, error) {
 // escape bytes so terminals render colors and formatting correctly.
 // Handles \033[, \x1b[, and \e[ notations.
 func unescapeANSI(s string) string {
+	// CSI sequences (ESC [)
 	s = strings.ReplaceAll(s, `\033[`, "\033[")
 	s = strings.ReplaceAll(s, `\x1b[`, "\033[")
 	s = strings.ReplaceAll(s, `\e[`, "\033[")
 	s = strings.ReplaceAll(s, `<ESC>[`, "\033[")
-	s = strings.ReplaceAll(s, `\033]`, "\033]") // OSC sequences
+	s = strings.ReplaceAll(s, `<033[`, "\033[")
+	// OSC sequences (ESC ])
+	s = strings.ReplaceAll(s, `\033]`, "\033]")
 	s = strings.ReplaceAll(s, `\x1b]`, "\033]")
 	s = strings.ReplaceAll(s, `<ESC>]`, "\033]")
+	s = strings.ReplaceAll(s, `<033]`, "\033]")
 	return s
 }
 
