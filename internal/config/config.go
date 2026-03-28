@@ -43,6 +43,19 @@ type Config struct {
 
 	// Command to auto-send to the LLM on session start (e.g. for a login banner)
 	MotdCommand string `json:"motd_command"`
+
+	// Custom prompt string (overrides the default user@host:cwd$ bash prompt)
+	PromptString string `json:"prompt_string"`
+
+	// Shell mode appends simulated shell state (CWD, env vars, etc.) to the
+	// LLM system prompt. Set to false for non-shell modes like BBS. Default: true.
+	ShellMode *bool `json:"shell_mode"`
+}
+
+// IsShellMode returns true if the instance should behave as a simulated shell
+// (appending shell state to the LLM context). Defaults to true when not set.
+func (c *Config) IsShellMode() bool {
+	return c.ShellMode == nil || *c.ShellMode
 }
 
 // Load reads a config file (JSON or JWCC/HuJSON) from the given path
