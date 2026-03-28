@@ -19,6 +19,8 @@ type Config struct {
 	DefaultHome  string
 	LLMClient    llm.Client
 	MotdCommand  string
+	PromptString string
+	ShellMode    bool
 }
 
 // Session represents a shell-like session
@@ -50,7 +52,12 @@ func NewSession(channel io.ReadWriter, config *Config, sshUser string) *Session 
 	}
 
 	state := NewShellState(config.Hostname, user, home)
-	term := terminal.NewTerminal(channel, state.Prompt())
+
+	prompt := state.Prompt()
+	if config.PromptString != "" {
+		prompt = config.PromptString
+	}
+	term := terminal.NewTerminal(channel, prompt)
 
 	return &Session{
 		channel: channel,
@@ -72,7 +79,7 @@ func (s *Session) Start() error {
 		} else {
 			cleaned := unescapeANSI(stripMarkdown(response))
 			if cleaned != "" {
-				fmt.Fprintln(s.term, cleaned)
+				s.writeRaw(cleaned)
 			}
 		}
 	}
@@ -127,11 +134,13 @@ func (s *Session) Start() error {
 		// Strip any markdown artifacts and unescape ANSI codes, then print
 		cleaned := unescapeANSI(stripMarkdown(response))
 		if cleaned != "" {
-			fmt.Fprintln(s.term, cleaned)
+			s.writeRaw(cleaned)
 		}
 
 		// Update prompt in case the LLM response implies state we should track
-		s.term.SetPrompt(s.state.Prompt())
+		if s.config.PromptString == "" {
+			s.term.SetPrompt(s.state.Prompt())
+		}
 	}
 }
 
@@ -140,10 +149,15 @@ func (s *Session) buildSystemPrompt() string {
 	var b strings.Builder
 	b.WriteString(s.config.SystemPrompt)
 	b.WriteString("\n\n")
-	b.WriteString(s.state.StateDescription())
-	b.WriteString("\nThe shell prompt currently shown to the user is: ")
-	b.WriteString(s.state.Prompt())
-	b.WriteString("\nRespond with ONLY the raw terminal output for the command. No prompt, no markdown.")
+	if s.config.ShellMode {
+		b.WriteString(s.state.StateDescription())
+		b.WriteString("\nThe shell prompt currently shown to the user is: ")
+		b.WriteString(s.state.Prompt())
+		b.WriteString("\nRespond with ONLY the raw terminal output for the command. No prompt, no markdown.")
+	} else {
+		fmt.Fprintf(&b, "The connected user is: %s\n", s.state.User)
+		b.WriteString("Respond with ONLY raw terminal output. No prompt, no markdown.")
+	}
 	return b.String()
 }
 
@@ -182,9 +196,25 @@ func unescapeANSI(s string) string {
 	s = strings.ReplaceAll(s, `\033[`, "\033[")
 	s = strings.ReplaceAll(s, `\x1b[`, "\033[")
 	s = strings.ReplaceAll(s, `\e[`, "\033[")
+	s = strings.ReplaceAll(s, `<ESC>[`, "\033[")
 	s = strings.ReplaceAll(s, `\033]`, "\033]") // OSC sequences
 	s = strings.ReplaceAll(s, `\x1b]`, "\033]")
+	s = strings.ReplaceAll(s, `<ESC>]`, "\033]")
 	return s
+}
+
+// writeRaw writes directly to the SSH channel, bypassing terminal.Terminal's
+// control-character sanitization so ANSI escape codes render correctly.
+func (s *Session) writeRaw(text string) {
+	// SSH terminals expect \r\n line endings
+	lines := strings.Split(text, "\n")
+	for i, line := range lines {
+		s.channel.Write([]byte(line))
+		if i < len(lines)-1 {
+			s.channel.Write([]byte("\r\n"))
+		}
+	}
+	s.channel.Write([]byte("\r\n"))
 }
 
 // stripMarkdown removes common markdown formatting artifacts from LLM output
