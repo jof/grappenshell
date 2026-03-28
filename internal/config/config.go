@@ -37,6 +37,9 @@ type Config struct {
 
 	// SSH listen port on the tsnet node
 	SSHPort int `json:"ssh_port"`
+
+	// tsnet state directory (derived from hostname if not set)
+	StateDir string `json:"state_dir"`
 }
 
 // Load reads a config file (JSON or JWCC/HuJSON) from the given path
@@ -99,5 +102,8 @@ func (c *Config) applyDefaults() {
 	}
 	if c.SSHPort == 0 {
 		c.SSHPort = 2222
+	}
+	if c.StateDir == "" {
+		c.StateDir = filepath.Join("/var/lib", "tsnet-"+c.Hostname)
 	}
 }

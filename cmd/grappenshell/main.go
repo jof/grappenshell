@@ -24,9 +24,12 @@ func main() {
 		log.Fatalf("Failed to load config: %v", err)
 	}
 
-	// Create shared Tailscale tsnet server
+	// Create shared Tailscale tsnet server.
+	// Dir must be set explicitly so multiple instances (different hostnames)
+	// on the same host get separate tsnet state directories.
 	tsServer := &tsnet.Server{
 		Hostname: cfg.Hostname,
+		Dir:      cfg.StateDir,
 	}
 
 	// Get a Tailscale-aware HTTP client for the LLM API
@@ -45,7 +48,7 @@ func main() {
 	}
 
 	// Create SSH server using the shared tsnet server
-	server, err := ssh.NewServer(tsServer, shellConfig, cfg.SSHPort)
+	server, err := ssh.NewServer(tsServer, shellConfig, cfg.SSHPort, cfg.StateDir)
 	if err != nil {
 		log.Fatalf("Failed to create SSH server: %v", err)
 	}

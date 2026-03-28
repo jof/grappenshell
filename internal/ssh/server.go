@@ -4,11 +4,15 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/x509"
 	"encoding/binary"
+	"encoding/pem"
 	"fmt"
 	"log"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
 
 	"github.com/jof/grappenshell/internal/shell"
 	"golang.org/x/crypto/ssh"
@@ -24,8 +28,9 @@ type Server struct {
 	listener    net.Listener
 }
 
-// NewServer creates a new SSH server using the provided tsnet.Server
-func NewServer(tsServer *tsnet.Server, shellConfig *shell.Config, sshPort int) (*Server, error) {
+// NewServer creates a new SSH server using the provided tsnet.Server.
+// stateDir is used to persist the SSH host key across restarts.
+func NewServer(tsServer *tsnet.Server, shellConfig *shell.Config, sshPort int, stateDir string) (*Server, error) {
 	s := &Server{
 		tsServer:    tsServer,
 		shellConfig: shellConfig,
@@ -38,10 +43,10 @@ func NewServer(tsServer *tsnet.Server, shellConfig *shell.Config, sshPort int) (
 		NoClientAuth: true,
 	}
 
-	// Generate server key
-	privateKey, err := generateHostKey()
+	// Load or generate host key, persisted in stateDir
+	privateKey, err := loadOrGenerateHostKey(stateDir)
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate host key: %v", err)
+		return nil, fmt.Errorf("failed to load host key: %v", err)
 	}
 	s.sshConfig.AddHostKey(privateKey)
 
@@ -173,10 +178,47 @@ func (s *Server) handleSession(channel ssh.Channel, requests <-chan *ssh.Request
 	}
 }
 
-// generateHostKey generates a new SSH host key
-func generateHostKey() (ssh.Signer, error) {
-	// In a real application, you'd want to persist this key
+// loadOrGenerateHostKey loads an ed25519 host key from stateDir/ssh_host_ed25519_key,
+// or generates and persists a new one if the file doesn't exist.
+func loadOrGenerateHostKey(stateDir string) (ssh.Signer, error) {
+	keyPath := filepath.Join(stateDir, "ssh_host_ed25519_key")
+
+	// Try to load existing key
+	data, err := os.ReadFile(keyPath)
+	if err == nil {
+		signer, err := ssh.ParsePrivateKey(data)
+		if err == nil {
+			log.Printf("Loaded SSH host key from %s", keyPath)
+			return signer, nil
+		}
+		log.Printf("Warning: failed to parse existing host key %s: %v (regenerating)", keyPath, err)
+	}
+
+	// Generate new key
 	_, privKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate ed25519 key: %w", err)
+	}
+
+	// Marshal to PEM
+	keyBytes, err := x509.MarshalPKCS8PrivateKey(privKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal private key: %w", err)
+	}
+	pemBlock := pem.EncodeToMemory(&pem.Block{
+		Type:  "PRIVATE KEY",
+		Bytes: keyBytes,
+	})
+
+	// Persist to disk
+	if err := os.MkdirAll(stateDir, 0700); err != nil {
+		return nil, fmt.Errorf("failed to create state dir %s: %w", stateDir, err)
+	}
+	if err := os.WriteFile(keyPath, pemBlock, 0600); err != nil {
+		return nil, fmt.Errorf("failed to write host key to %s: %w", keyPath, err)
+	}
+	log.Printf("Generated and saved new SSH host key to %s", keyPath)
+
 	signer, err := ssh.NewSignerFromKey(privKey)
 	if err != nil {
 		return nil, err
