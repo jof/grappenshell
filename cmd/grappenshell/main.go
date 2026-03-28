@@ -45,6 +45,7 @@ func main() {
 		DefaultUser:  cfg.DefaultUser,
 		DefaultHome:  cfg.DefaultHome,
 		LLMClient:    llmClient,
+		MotdCommand:  cfg.MotdCommand,
 	}
 
 	// Create SSH server using the shared tsnet server

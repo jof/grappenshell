@@ -18,6 +18,7 @@ type Config struct {
 	DefaultUser  string
 	DefaultHome  string
 	LLMClient    llm.Client
+	MotdCommand  string
 }
 
 // Session represents a shell-like session
@@ -63,6 +64,19 @@ func NewSession(channel io.ReadWriter, config *Config, sshUser string) *Session 
 
 // Start starts the shell session
 func (s *Session) Start() error {
+	// If a MOTD command is configured, send it to the LLM on first connect
+	if s.config.MotdCommand != "" {
+		response, err := s.sendToLLM(s.config.MotdCommand)
+		if err != nil {
+			fmt.Fprintf(s.term, "Error: %v\n", err)
+		} else {
+			cleaned := unescapeANSI(stripMarkdown(response))
+			if cleaned != "" {
+				fmt.Fprintln(s.term, cleaned)
+			}
+		}
+	}
+
 	for {
 		line, err := s.term.ReadLine()
 		if err != nil {

@@ -40,6 +40,9 @@ type Config struct {
 
 	// tsnet state directory (derived from hostname if not set)
 	StateDir string `json:"state_dir"`
+
+	// Command to auto-send to the LLM on session start (e.g. for a login banner)
+	MotdCommand string `json:"motd_command"`
 }
 
 // Load reads a config file (JSON or JWCC/HuJSON) from the given path
